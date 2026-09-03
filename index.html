@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#e85d04">
+  <meta name="description" content="Supervision distante QSense BMS via EMQX Cloud">
+  <title>QSense Edge | Supervision BMS</title>
+  <script src="https://unpkg.com/mqtt@5.14.1/dist/mqtt.min.js"></script>
+  <style>
+    :root {
+      --orange:#e85d04; --orange-dark:#b94700; --orange-soft:#fff0e6;
+      --ink:#20272e; --muted:#63707b; --line:#dfe3e7; --bg:#f3f4f5;
+      --surface:#fff; --soft:#f8f9fa; --good:#197a49; --good-soft:#e9f6ef;
+      --warn:#9a6200; --warn-soft:#fff5dd; --bad:#bd2f2a; --bad-soft:#fcebea;
+      --shadow:0 2px 10px rgba(27,34,40,.07); --radius:9px;
+      --mono:"IBM Plex Mono","Cascadia Mono",Consolas,monospace;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",Aptos,"Segoe UI",Arial,sans-serif;line-height:1.45}
+    button,input{font:inherit}
+    header{position:sticky;top:0;z-index:20;background:var(--surface);border-top:4px solid var(--orange);border-bottom:1px solid var(--line);box-shadow:0 1px 6px rgba(27,34,40,.05)}
+    .topbar{min-height:66px;padding:10px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .mark{width:40px;height:40px;border-radius:6px;background:var(--orange);color:#fff;display:grid;place-items:center;font-size:20px;font-weight:850}
+    .brand h1{font-size:17px;line-height:1.15;margin:0;letter-spacing:-.2px}
+    .brand p{font-size:11px;color:var(--muted);margin:3px 0 0;letter-spacing:.25px}
+    .head-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+    .pill,.btn{border:1px solid var(--line);border-radius:6px;background:var(--soft);min-height:34px;padding:7px 11px;font-size:12px;font-weight:700;color:var(--ink)}
+    .pill{display:flex;align-items:center;gap:7px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#8a959e}.dot.live{background:var(--good);box-shadow:0 0 0 3px var(--good-soft)}.dot.wait{background:var(--warn)}.dot.down{background:var(--bad)}
+    .btn{cursor:pointer;background:#fff}.btn:hover{border-color:var(--orange);color:var(--orange-dark);background:var(--orange-soft)}
+    .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange)}.btn.primary:hover{background:var(--orange-dark)}
+    nav{height:39px;padding:0 26px;background:#293039;display:flex;align-items:center;gap:2px;overflow:auto}
+    nav a{color:#cfd4d8;text-decoration:none;padding:11px 12px 9px;border-bottom:2px solid transparent;white-space:nowrap;font-size:10px;font-weight:800;letter-spacing:.55px;text-transform:uppercase}
+    nav a:hover{color:#fff;border-bottom-color:var(--orange)}
+    .nav-meta{margin-left:auto;color:#aeb6bd;font-family:var(--mono);font-size:10px;white-space:nowrap}
+    main{max-width:1460px;margin:auto;padding:20px 24px 48px}
+    .notice{background:#fff;border:1px solid var(--line);border-left:4px solid var(--orange);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:var(--shadow)}
+    .notice strong{font-size:13px}.notice span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+    .overview{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
+    .kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);min-width:0}
+    .kpi .label{color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.55px;text-transform:uppercase}
+    .kpi .value{font-family:var(--mono);font-size:23px;font-weight:800;letter-spacing:-.5px;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .kpi .unit{font-size:11px;color:var(--muted);margin-left:3px}.kpi .sub{font-size:10px;color:var(--muted);margin-top:5px}
+    .layout{display:grid;grid-template-columns:1.45fr 1fr;gap:14px}
+    .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+    .card.full{grid-column:1/-1}
+    .card-head{min-height:51px;padding:12px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fcfcfc}
+    .card-head h2{font-size:13px;margin:0}.eyebrow{font-family:var(--mono);font-size:9px;color:var(--orange-dark);font-weight:800;letter-spacing:.6px;text-transform:uppercase}
+    .state{padding:4px 7px;border-radius:4px;font-size:9px;font-weight:850;letter-spacing:.45px;text-transform:uppercase;background:#edf0f2;color:var(--muted)}
+    .state.good{background:var(--good-soft);color:var(--good)}.state.bad{background:var(--bad-soft);color:var(--bad)}.state.warn{background:var(--warn-soft);color:var(--warn)}
+    .card-body{padding:15px}
+    .soc-row{display:grid;grid-template-columns:145px 1fr;gap:20px;align-items:center}
+    .gauge{--soc:0;position:relative;width:134px;height:134px;border-radius:50%;background:conic-gradient(var(--orange) calc(var(--soc)*1%),#e8ebed 0);display:grid;place-items:center;margin:auto}
+    .gauge:after{content:"";width:101px;height:101px;border-radius:50%;background:#fff;border:1px solid var(--line);position:absolute}
+    .gauge-text{position:relative;z-index:1;text-align:center}.gauge-text strong{display:block;font:800 28px var(--mono)}.gauge-text span{font-size:10px;color:var(--muted);font-weight:700}
+    .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .fact{background:var(--soft);border:1px solid #e8ebed;border-radius:6px;padding:10px}.fact span{display:block;color:var(--muted);font-size:10px}.fact strong{display:block;margin-top:3px;font:750 13px var(--mono)}
+    .relays{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    .relay{border:1px solid var(--line);border-left:4px solid #9aa3aa;border-radius:7px;padding:13px;background:var(--soft)}.relay.on{border-left-color:var(--good);background:var(--good-soft)}
+    .relay-top{display:flex;align-items:center;justify-content:space-between}.relay h3{font-size:13px;margin:0}.relay-state{font:850 11px var(--mono);color:var(--muted)}.relay.on .relay-state{color:var(--good)}
+    .relay p{font-size:11px;color:var(--muted);margin:6px 0 0}
+    .grid-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .cell{border:1px solid var(--line);border-radius:6px;padding:9px;background:var(--soft);position:relative;overflow:hidden}.cell:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--good)}.cell.warn:before{background:var(--warn)}.cell.bad:before{background:var(--bad)}
+    .cell span{font-size:9px;color:var(--muted);font-weight:800}.cell strong{display:block;font:750 13px var(--mono);margin-top:3px}
+    .diag{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.diag div{padding:9px 10px;border-bottom:1px solid #eceff1}.diag span{font-size:10px;color:var(--muted)}.diag strong{float:right;font:700 11px var(--mono)}
+    .flags{display:flex;flex-wrap:wrap;gap:7px}.flag{padding:6px 8px;border-radius:5px;background:var(--good-soft);color:var(--good);font:800 10px var(--mono)}.flag.alarm{background:var(--bad-soft);color:var(--bad)}
+    details{margin-top:14px;border-top:1px solid var(--line);padding-top:11px}summary{cursor:pointer;font-size:11px;font-weight:750;color:var(--muted)}pre{max-height:260px;overflow:auto;background:#20272e;color:#e7ebee;border-radius:6px;padding:12px;font:11px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+    dialog{width:min(560px,calc(100% - 28px));border:0;border-radius:10px;padding:0;box-shadow:0 24px 80px rgba(0,0,0,.28)}dialog::backdrop{background:rgba(18,23,27,.55);backdrop-filter:blur(2px)}
+    .modal-head{padding:16px 18px;border-top:4px solid var(--orange);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.modal-head h2{font-size:16px;margin:0}
+    .modal-body{padding:18px}.form-grid{display:grid;grid-template-columns:1fr 120px;gap:12px}.field.full{grid-column:1/-1}.field label{display:block;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.45px;margin-bottom:5px}.field input{width:100%;border:1px solid #cfd5da;border-radius:6px;padding:9px 10px;color:var(--ink);background:#fff}.field input:focus{outline:3px solid var(--orange-soft);border-color:var(--orange)}
+    .security{margin-top:13px;padding:10px 11px;background:var(--warn-soft);border:1px solid #f1d99c;border-radius:6px;color:#684400;font-size:11px}
+    .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}.error{min-height:17px;color:var(--bad);font-size:11px;margin-top:9px}
+    footer{max-width:1460px;margin:auto;padding:0 24px 28px;color:var(--muted);font-size:10px;display:flex;justify-content:space-between;gap:12px}
+    @media(max-width:1100px){.overview{grid-template-columns:repeat(3,1fr)}.layout{grid-template-columns:1fr}.card.full{grid-column:auto}}
+    @media(max-width:700px){.topbar,nav{padding-left:14px;padding-right:14px}.head-actions .pill:nth-child(2){display:none}main{padding:14px 12px 36px}.overview{grid-template-columns:repeat(2,1fr)}.soc-row{grid-template-columns:1fr}.grid-list{grid-template-columns:repeat(2,1fr)}.diag{grid-template-columns:1fr}.notice{align-items:flex-start}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.nav-meta{display:none}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div class="brand"><div class="mark">Q</div><div><h1>QSense Edge</h1><p>Poste de supervision BMS distant</p></div></div>
+      <div class="head-actions">
+        <div class="pill"><i id="liveDot" class="dot down"></i><span id="liveText">Déconnecté</span></div>
+        <div class="pill"><span id="clock">--:--:--</span></div>
+        <button class="btn" id="settingsBtn" type="button">Connexion EMQX</button>
+      </div>
+    </div>
+    <nav aria-label="Sections">
+      <a href="#energy">Énergie</a><a href="#relays">Relais</a><a href="#cells">Cellules</a><a href="#thermal">Températures</a><a href="#diagnostics">Diagnostic</a>
+      <span class="nav-meta" id="topicLabel">qsense/bms/data</span>
+    </nav>
+  </header>
+
+  <main>
+    <section class="notice" id="notice">
+      <div><strong id="noticeTitle">Connexion EMQX requise</strong><span id="noticeText">Ouvrez « Connexion EMQX » et saisissez le mot de passe de lecture.</span></div>
+      <button class="btn primary" id="connectBtn" type="button">Configurer</button>
+    </section>
+
+    <section class="overview" aria-label="Indicateurs principaux">
+      <article class="kpi"><div class="label">Tension batterie</div><div class="value"><span id="voltage">—</span><span class="unit">V</span></div><div class="sub" id="bmsState">BMS en attente</div></article>
+      <article class="kpi"><div class="label">Courant</div><div class="value"><span id="current">—</span><span class="unit">A</span></div><div class="sub" id="currentMode">—</div></article>
+      <article class="kpi"><div class="label">Puissance</div><div class="value"><span id="power">—</span><span class="unit">W</span></div><div class="sub">Valeur calculée V × I</div></article>
+      <article class="kpi"><div class="label">État de charge</div><div class="value"><span id="socTop">—</span><span class="unit">%</span></div><div class="sub">SOC transmis par le BMS</div></article>
+      <article class="kpi"><div class="label">Température max.</div><div class="value"><span id="tempMax">—</span><span class="unit">°C</span></div><div class="sub">BMS et thermocouple</div></article>
+      <article class="kpi"><div class="label">Signal cellulaire</div><div class="value"><span id="csq">—</span><span class="unit">CSQ</span></div><div class="sub" id="rssi">RSSI indisponible</div></article>
+    </section>
+
+    <section class="layout">
+      <article class="card" id="energy">
+        <div class="card-head"><div><div class="eyebrow">Batterie</div><h2>État énergétique</h2></div><span id="bmsBadge" class="state">En attente</span></div>
+        <div class="card-body soc-row">
+          <div id="socGauge" class="gauge"><div class="gauge-text"><strong id="socGaugeText">—</strong><span>ÉTAT DE CHARGE</span></div></div>
+          <div class="facts">
+            <div class="fact"><span>Capacité restante</span><strong id="remaining">— Ah</strong></div>
+            <div class="fact"><span>Capacité pleine</span><strong id="fullCapacity">— Ah</strong></div>
+            <div class="fact"><span>Cycles</span><strong id="cycles">—</strong></div>
+            <div class="fact"><span>Adresse BMS</span><strong id="address">—</strong></div>
+            <div class="fact"><span>Cellule minimale</span><strong id="cellMin">— mV</strong></div>
+            <div class="fact"><span>Cellule maximale</span><strong id="cellMax">— mV</strong></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card" id="relays">
+        <div class="card-head"><div><div class="eyebrow">Commande</div><h2>Sorties d’autorisation</h2></div><span class="state warn">Lecture seule</span></div>
+        <div class="card-body">
+          <div class="relays">
+            <div class="relay" id="relay1"><div class="relay-top"><h3>Batterie 1</h3><span class="relay-state" id="relay1State">INCONNU</span></div><p>Sortie physique PB1 du STM32</p></div>
+            <div class="relay" id="relay2"><div class="relay-top"><h3>Batterie 2</h3><span class="relay-state" id="relay2State">INCONNU</span></div><p>Sortie physique PB2 du STM32</p></div>
+          </div>
+          <div class="security">Les commandes et horaires restent disponibles sur l’interface locale de l’ESP32. Cette page distante ne publie aucune commande de relais.</div>
+        </div>
+      </article>
+
+      <article class="card full" id="cells">
+        <div class="card-head"><div><div class="eyebrow">Équilibrage</div><h2>Tensions des cellules</h2></div><span id="spreadBadge" class="state">—</span></div>
+        <div class="card-body"><div id="cellsGrid" class="grid-list"><div class="cell"><span>ÉTAT</span><strong>En attente</strong></div></div></div>
+      </article>
+
+      <article class="card" id="thermal">
+        <div class="card-head"><div><div class="eyebrow">Thermique</div><h2>Températures</h2></div><span id="thermalBadge" class="state">—</span></div>
+        <div class="card-body">
+          <div class="facts">
+            <div class="fact"><span>Thermocouple</span><strong id="thermocouple">— °C</strong></div>
+            <div class="fact"><span>Interne MAX31855</span><strong id="internal">— °C</strong></div>
+            <div class="fact"><span>MOS BMS</span><strong id="mosTemp">— °C</strong></div>
+            <div class="fact"><span>Ambiante BMS</span><strong id="ambientTemp">— °C</strong></div>
+          </div>
+          <div id="tempsGrid" class="grid-list" style="margin-top:10px"></div>
+        </div>
+      </article>
+
+      <article class="card" id="diagnostics">
+        <div class="card-head"><div><div class="eyebrow">Système</div><h2>Communication et alarmes</h2></div><span id="alarmBadge" class="state">—</span></div>
+        <div class="card-body">
+          <div class="diag">
+            <div><span>Dernière trame</span><strong id="lastFrame">—</strong></div>
+            <div><span>Séquence</span><strong id="sequence">—</strong></div>
+            <div><span>Réseau SIM</span><strong id="network">—</strong></div>
+            <div><span>SMS envoyés</span><strong id="smsSent">—</strong></div>
+            <div><span>SMS échoués</span><strong id="smsFailed">—</strong></div>
+            <div><span>Topic reçu</span><strong id="receivedTopic">—</strong></div>
+          </div>
+          <div id="flags" class="flags" style="margin-top:13px"><span class="flag">Aucune donnée</span></div>
+          <details><summary>Afficher le dernier JSON reçu</summary><pre id="rawJson">Aucun message reçu.</pre></details>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer><span>QSense Edge · Supervision distante via EMQX Cloud</span><span>Commandes locales : ESP32</span></footer>
+
+  <dialog id="settingsDialog">
+    <form id="settingsForm">
+      <div class="modal-head"><h2>Connexion EMQX Cloud</h2><button class="btn" id="closeDialog" type="button">Fermer</button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field"><label for="host">Hôte EMQX</label><input id="host" name="host" required value="hf1ae1d1.ala.eu-central-1.emqxsl.com" spellcheck="false"></div>
+          <div class="field"><label for="port">Port WSS</label><input id="port" name="port" required inputmode="numeric" value="8084"></div>
+          <div class="field full"><label for="topic">Topic</label><input id="topic" name="topic" required value="qsense/bms/data" spellcheck="false"></div>
+          <div class="field full"><label for="username">Utilisateur de lecture</label><input id="username" name="username" required value="QsenseBMS" autocomplete="username"></div>
+          <div class="field full"><label for="password">Mot de passe</label><input id="password" name="password" required type="password" autocomplete="current-password" placeholder="Saisi uniquement dans ce navigateur"></div>
+        </div>
+        <div class="security"><strong>Sécurité :</strong> le mot de passe n’est ni écrit dans ce fichier ni conservé dans le stockage permanent du navigateur. Pour GitHub Pages, utilisez idéalement un compte EMQX limité à la souscription du topic.</div>
+        <div id="formError" class="error" role="alert"></div>
+        <div class="modal-actions"><button class="btn" id="disconnectBtn" type="button">Déconnecter</button><button class="btn primary" type="submit">Se connecter</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const defaults = {host:'hf1ae1d1.ala.eu-central-1.emqxsl.com',port:'8084',topic:'qsense/bms/data',username:'QsenseBMS'};
+    let client = null;
+    let lastMessageAt = 0;
+    let currentTopic = defaults.topic;
+    let lastData = null;
+
+    function finite(value, fallback=0){const n=Number(value);return Number.isFinite(n)?n:fallback}
+    function first(obj, keys, fallback=0){for(const k of keys){if(obj && obj[k]!==undefined && obj[k]!==null)return obj[k]}return fallback}
+    function bool(value){return value===true || value===1 || value==='1'}
+    function fixed(value,digits=1){return Number.isFinite(Number(value))?Number(value).toFixed(digits):'—'}
+    function setText(id,value){$(id).textContent=value}
+    function setState(id,text,kind=''){$(id).textContent=text;$(id).className='state'+(kind?' '+kind:'')}
+    function setConnection(text,kind){setText('liveText',text);$('liveDot').className='dot '+kind}
+    function savePublicSettings(s){localStorage.setItem('qsense-emqx-public',JSON.stringify({host:s.host,port:s.port,topic:s.topic,username:s.username}))}
+    function loadSettings(){try{return {...defaults,...JSON.parse(localStorage.getItem('qsense-emqx-public')||'{}')}}catch{return {...defaults}}}
+
+    function normalize(raw){
+      const source=raw.bms||raw.battery||{};
+      const env=raw.environment||{};
+      const tc=raw.thermocouple||{};
+      const cell=raw.cellular||{};
+      const sms=raw.sms||{};
+      const manager=raw.manager||{};
+      const relayArray=Array.isArray(raw.relays)?raw.relays:[manager.relay1,manager.relay2];
+      const cells=Array.isArray(source.cells)?source.cells.map(Number).filter(Number.isFinite):[];
+      const temperatures=Array.isArray(source.temperatures)?source.temperatures.map(Number).filter(Number.isFinite):[];
+      const tcValid=bool(first(tc,['valid'],first(env,['thermocouple_ok'],false)));
+      return {
+        seq:first(raw,['seq','sequence'],0),
+        bms:{
+          valid:bool(first(source,['valid','ok'],false)), analog:bool(first(source,['analog','analogOk','analog_valid'],true)),
+          address:first(source,['address'],0), voltage:finite(first(source,['voltage','total_voltage_v'],0)), current:finite(first(source,['current','current_a'],0)),
+          soc:finite(first(source,['soc','soc_percent'],0)), remaining:finite(first(source,['remainingAh','remaining_ah','remaining_capacity_ah'],0)),
+          full:finite(first(source,['fullAh','full_ah','full_capacity_ah'],0)), cycles:first(source,['cycles','cycle_count'],0),
+          cellMin:finite(first(source,['cellMinMv','cell_min_mv'],0)), cellMax:finite(first(source,['cellMaxMv','cell_max_mv'],0)),
+          maxTemp:finite(first(source,['maxTemperature','temperature_max','max_temperature_c'],0)),
+          mosTemp:finite(first(source,['mosTemperature','mos_temperature_c'],0)), ambientTemp:finite(first(source,['ambientTemperature','ambient_temperature_c'],0)),
+          warn1:first(source,['warn1','warn_state1'],0),warn2:first(source,['warn2','warn_state2'],0),protect1:first(source,['protect1','protect_state1'],0),protect2:first(source,['protect2','protect_state2'],0),fault:first(source,['fault','fault_state'],0),
+          cells,temperatures
+        },
+        thermocouple:{valid:tcValid,temperature:finite(first(tc,['temperature'],first(env,['thermocouple'],0))),internal:finite(first(tc,['internal'],first(env,['internal'],0))),fault:first(tc,['fault'],0)},
+        relays:[bool(relayArray[0]),bool(relayArray[1])],
+        cellular:{modem:bool(first(cell,['modem','responding'],true)),registered:bool(first(cell,['registered','network_registered'],false)),csq:first(cell,['csq'],null),rssi:first(cell,['rssiDbm','rssi_dbm'],null)},
+        sms:{sent:first(sms,['sent'],0),failed:first(sms,['failed'],0),pending:first(sms,['pending'],0)}, raw
+      };
+    }
+
+    function render(raw,topic){
+      const d=normalize(raw);lastData=d;lastMessageAt=Date.now();
+      const b=d.bms,power=b.voltage*b.current,maxTemp=Math.max(b.maxTemp,d.thermocouple.valid?d.thermocouple.temperature:-999);
+      setText('voltage',fixed(b.voltage,2));setText('current',fixed(b.current,2));setText('power',fixed(power,1));setText('socTop',fixed(b.soc,1));setText('tempMax',maxTemp>-900?fixed(maxTemp,1):'—');
+      setText('bmsState',b.valid?'Données BMS valides':'BMS indisponible');setText('currentMode',b.current>0.05?'Charge':b.current<-.05?'Décharge':'Veille');
+      setText('csq',d.cellular.csq===null?'—':d.cellular.csq);setText('rssi',d.cellular.rssi===null?'RSSI indisponible':d.cellular.rssi+' dBm');
+      setState('bmsBadge',b.valid?'Opérationnel':'Indisponible',b.valid?'good':'bad');
+      const soc=Math.max(0,Math.min(100,b.soc));$('socGauge').style.setProperty('--soc',soc);setText('socGaugeText',fixed(soc,1)+'%');
+      setText('remaining',fixed(b.remaining,2)+' Ah');setText('fullCapacity',fixed(b.full,2)+' Ah');setText('cycles',b.cycles||'—');setText('address',b.address?'0x'+Number(b.address).toString(16).padStart(2,'0').toUpperCase():'—');
+      setText('cellMin',b.cellMin?fixed(b.cellMin,0)+' mV':'— mV');setText('cellMax',b.cellMax?fixed(b.cellMax,0)+' mV':'— mV');
+      d.relays.forEach((on,i)=>{const box=$('relay'+(i+1));box.className='relay'+(on?' on':'');setText('relay'+(i+1)+'State',on?'ACTIF':'COUPÉ')});
+      const spread=b.cellMax&&b.cellMin?b.cellMax-b.cellMin:0;setState('spreadBadge',b.cells.length?('Écart '+spread+' mV'):'Détail non publié',spread>100?'bad':spread>50?'warn':b.cells.length?'good':'');
+      $('cellsGrid').innerHTML=b.cells.length?b.cells.map((v,i)=>{const cls=v<2800||v>3650?'bad':v<3000||v>3500?'warn':'';return `<div class="cell ${cls}"><span>CELLULE ${i+1}</span><strong>${Math.round(v)} mV</strong></div>`}).join(''):'<div class="cell"><span>INFORMATION</span><strong>Détail non publié</strong></div>';
+      setText('thermocouple',d.thermocouple.valid?fixed(d.thermocouple.temperature,1)+' °C':'Défaut');setText('internal',fixed(d.thermocouple.internal,1)+' °C');setText('mosTemp',fixed(b.mosTemp,1)+' °C');setText('ambientTemp',fixed(b.ambientTemp,1)+' °C');
+      $('tempsGrid').innerHTML=b.temperatures.map((v,i)=>`<div class="cell ${v>55?'bad':v>45?'warn':''}"><span>SONDE ${i+1}</span><strong>${fixed(v,1)} °C</strong></div>`).join('');
+      setState('thermalBadge',d.thermocouple.valid?'MAX31855 OK':'Défaut MAX',d.thermocouple.valid?'good':'bad');
+      setText('lastFrame',new Date().toLocaleTimeString('fr-FR'));setText('sequence',d.seq);setText('network',d.cellular.registered?'Enregistré':'Non enregistré');setText('smsSent',d.sms.sent);setText('smsFailed',d.sms.failed);setText('receivedTopic',topic);
+      const alarms=[['WARN 1',b.warn1],['WARN 2',b.warn2],['PROT 1',b.protect1],['PROT 2',b.protect2],['FAULT',b.fault]];const active=alarms.filter(x=>Number(x[1])!==0);
+      $('flags').innerHTML=active.length?active.map(x=>`<span class="flag alarm">${x[0]}: ${Number(x[1]).toString(16).padStart(2,'0').toUpperCase()}</span>`).join(''):'<span class="flag">Aucune alarme BMS</span>';
+      setState('alarmBadge',active.length?active.length+' alarme(s)':'Normal',active.length?'bad':'good');
+      setText('rawJson',JSON.stringify(raw,null,2));setText('noticeTitle','Télémétrie reçue');setText('noticeText','Flux EMQX actif · dernière mise à jour à '+new Date().toLocaleTimeString('fr-FR'));$('notice').style.borderLeftColor='var(--good)';
+    }
+
+    function disconnect(){if(client){client.end(true);client=null}setConnection('Déconnecté','down');setText('noticeTitle','Connexion arrêtée');setText('noticeText','Aucune nouvelle donnée ne sera reçue.');$('notice').style.borderLeftColor='var(--bad)'}
+    function connect(settings,password){
+      disconnect();currentTopic=settings.topic;setText('topicLabel',settings.topic);setConnection('Connexion…','wait');setText('noticeTitle','Connexion à EMQX');setText('noticeText','Ouverture du canal WebSocket sécurisé…');$('notice').style.borderLeftColor='var(--warn)';
+      const url=`wss://${settings.host}:${settings.port}/mqtt`;
+      client=mqtt.connect(url,{clientId:'QSenseWeb_'+crypto.randomUUID().replaceAll('-','').slice(0,16),username:settings.username,password,clean:true,keepalive:45,connectTimeout:12000,reconnectPeriod:5000,protocolVersion:4});
+      client.on('connect',()=>{setConnection('Broker connecté','live');setText('noticeTitle','Connecté à EMQX');setText('noticeText','Abonnement au topic '+settings.topic+'…');client.subscribe(settings.topic,{qos:1},err=>{if(err){setText('noticeTitle','Échec de souscription');setText('noticeText',err.message)}else setText('noticeText','En attente de la prochaine publication du STM32…')})});
+      client.on('message',(topic,payload)=>{try{render(JSON.parse(payload.toString()),topic)}catch(err){setText('noticeTitle','JSON non conforme');setText('noticeText','Le message MQTT a été reçu mais ne contient pas un JSON valide : '+err.message);setText('rawJson',payload.toString())}});
+      client.on('reconnect',()=>setConnection('Reconnexion…','wait'));
+      client.on('offline',()=>setConnection('Hors ligne','down'));
+      client.on('close',()=>{if(client)setConnection('Déconnecté','down')});
+      client.on('error',err=>{setText('noticeTitle','Erreur EMQX');setText('noticeText',err.message);setConnection('Erreur','down')});
+    }
+
+    function openSettings(){const s=loadSettings();$('host').value=s.host;$('port').value=s.port;$('topic').value=s.topic;$('username').value=s.username;$('password').value='';$('formError').textContent='';$('settingsDialog').showModal();setTimeout(()=>$('password').focus(),50)}
+    $('settingsBtn').addEventListener('click',openSettings);$('connectBtn').addEventListener('click',openSettings);$('closeDialog').addEventListener('click',()=>$('settingsDialog').close());$('disconnectBtn').addEventListener('click',()=>{disconnect();$('settingsDialog').close()});
+    $('settingsForm').addEventListener('submit',event=>{event.preventDefault();const s={host:$('host').value.trim(),port:$('port').value.trim(),topic:$('topic').value.trim(),username:$('username').value.trim()};const password=$('password').value;if(!s.host||!/^\d+$/.test(s.port)||!s.topic||!s.username||!password){$('formError').textContent='Tous les champs sont obligatoires et le port doit être numérique.';return}savePublicSettings(s);$('settingsDialog').close();connect(s,password)});
+    setInterval(()=>{setText('clock',new Date().toLocaleTimeString('fr-FR'));if(lastMessageAt&&Date.now()-lastMessageAt>90000){setText('noticeTitle','Données anciennes');setText('noticeText','Aucune télémétrie reçue depuis plus de 90 secondes.');$('notice').style.borderLeftColor='var(--warn)'}},1000);
+    const saved=loadSettings();setText('topicLabel',saved.topic);openSettings();
+  </script>
+</body>
+</html>
